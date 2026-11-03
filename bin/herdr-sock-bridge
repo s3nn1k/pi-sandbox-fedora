@@ -100,18 +100,25 @@ def _handle(client):
                 continue
 
             request_id = None
+            request = None
             try:
                 if len(line) > MAX_LINE:
                     raise ValueError("line too long")
                 request = json.loads(line.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                request = None
+            if not isinstance(request, dict):
+                method = None
+            else:
                 method = request.get("method")
                 request_id = request.get("id")
-            except (ValueError, UnicodeDecodeError):
-                method = None
 
             if method in ALLOWED_METHODS:
                 try:
-                    upstream.sendall(line + b"\n")
+                    payload = {"method": method, "id": request_id}
+                    if "params" in request:
+                        payload["params"] = request["params"]
+                    upstream.sendall(json.dumps(payload).encode("utf-8") + b"\n")
                 except OSError:
                     return
             else:
@@ -134,17 +141,7 @@ def _handle(client):
             pass
 
 
-def main():
-    listen_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_LISTEN_PATH
-    wait_start = time.time()
-    waited_notice = 0
-    while not os.path.exists(SOCK_PATH):
-        time.sleep(5)
-        waited = int((time.time() - wait_start) / 60)
-        if waited >= (waited_notice + 10):
-            waited_notice = waited
-            log("waiting for %s (%d min)" % (SOCK_PATH, waited))
-
+def bind_listen(listen_path):
     listen_dir = os.path.dirname(listen_path)
     if listen_dir:
         os.makedirs(listen_dir, exist_ok=True)
@@ -154,13 +151,49 @@ def main():
         pass
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(listen_path)
-    os.chmod(listen_path, 0o666)
+    os.chmod(listen_path, 0o600)
     server.listen(16)
+    server.settimeout(5)
+    return server
+
+
+def self_heal(holder, listen_path):
+    while True:
+        time.sleep(5)
+        if os.path.exists(listen_path):
+            continue
+        try:
+            holder[0].close()
+        except OSError:
+            pass
+        holder[0] = bind_listen(listen_path)
+        log("rebound after unlink")
+
+
+def main():
+    listen_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_LISTEN_PATH
+    holder = [bind_listen(listen_path)]
     log("listening on %s -> %s (allow: %s)"
         % (listen_path, SOCK_PATH, ", ".join(sorted(ALLOWED_METHODS))))
 
+    wait_start = time.time()
+    waited_notice = 0
+    while not os.path.exists(SOCK_PATH):
+        time.sleep(5)
+        waited = int((time.time() - wait_start) / 60)
+        if waited >= (waited_notice + 10):
+            waited_notice = waited
+            log("waiting for %s (%d min)" % (SOCK_PATH, waited))
+
+    threading.Thread(target=self_heal, args=(holder, listen_path), daemon=True).start()
     while True:
-        client, _ = server.accept()
+        try:
+            client, _ = holder[0].accept()
+        except socket.timeout:
+            continue
+        except OSError:
+            time.sleep(1)
+            continue
         threading.Thread(target=handle, args=(client,), daemon=True).start()
 
 
