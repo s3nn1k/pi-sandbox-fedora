@@ -40,10 +40,10 @@ COPY --from=whisper /src/build/bin/whisper-cli /usr/local/bin/
 COPY --from=docker:29-cli /usr/local/bin/docker /usr/local/bin/docker
 
 ARG AGENT_HOME_PATH
-ARG AGENT_UID=501
-ARG AGENT_GID=20
+ARG AGENT_UID=1000
+ARG AGENT_GID=1000
 ARG COMPOSE_VERSION=v2.39.4
-ARG COMPOSE_SHA256=49082844b87f03cdcd5f5bbef1ba8c9c897b7a2dfb80cea18d61ec8ca6117e0c
+ARG COMPOSE_SHA256=7af95166a730b87e172d4fc9aefea8725d3c6c7327d59149267b452114ddb7d4
 RUN mkdir -p /usr/local/lib/docker/cli-plugins \
     && curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" \
       -o /usr/local/lib/docker/cli-plugins/docker-compose \
@@ -60,31 +60,31 @@ ARG NVIM_VERSION=v0.12.5
 ARG UV_VERSION=0.13.5
 RUN set -eux; \
     curl -fsSL -o /tmp/glab.tgz \
-      "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_arm64.tar.gz"; \
+      "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_amd64.tar.gz"; \
     tar -xzf /tmp/glab.tgz -C /tmp; \
     mv /tmp/bin/glab /usr/local/bin/glab; \
     curl -fsSL -o /tmp/gh.tgz \
-      "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_arm64.tar.gz"; \
+      "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz"; \
     tar -xzf /tmp/gh.tgz -C /tmp; \
-    mv "/tmp/gh_${GH_VERSION}_linux_arm64/bin/gh" /usr/local/bin/gh; \
+    mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh; \
     curl -fsSL -o /usr/local/bin/kubectl \
-      "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/arm64/kubectl"; \
+      "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"; \
     chmod +x /usr/local/bin/kubectl; \
     curl -fsSL -o /usr/local/bin/yq \
-      "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_arm64"; \
+      "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"; \
     chmod +x /usr/local/bin/yq; \
     curl -fsSL -o /usr/local/bin/yt-dlp \
-      "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux_aarch64"; \
+      "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux_x86_64"; \
     chmod +x /usr/local/bin/yt-dlp; \
     curl -fsSL -o /tmp/nvim.tgz \
-      "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-arm64.tar.gz"; \
+      "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"; \
     tar -xzf /tmp/nvim.tgz -C /opt; \
-    ln -s /opt/nvim-linux-arm64/bin/nvim /usr/local/bin/nvim; \
+    ln -s /opt/nvim-linux-x86_64/bin/nvim /usr/local/bin/nvim; \
     curl -fsSL -o /tmp/uv.tgz \
-      "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-unknown-linux-gnu.tar.gz"; \
+      "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"; \
     tar -xzf /tmp/uv.tgz -C /tmp; \
-    mv /tmp/uv-aarch64-unknown-linux-gnu/uv /tmp/uv-aarch64-unknown-linux-gnu/uvx /usr/local/bin/; \
-    rm -rf /tmp/glab.tgz /tmp/gh.tgz /tmp/nvim.tgz /tmp/uv.tgz /tmp/bin /tmp/uv-aarch64-unknown-linux-gnu "/tmp/gh_${GH_VERSION}_linux_arm64"
+    mv /tmp/uv-x86_64-unknown-linux-gnu/uv /tmp/uv-x86_64-unknown-linux-gnu/uvx /usr/local/bin/; \
+    rm -rf /tmp/glab.tgz /tmp/gh.tgz /tmp/nvim.tgz /tmp/uv.tgz /tmp/bin /tmp/uv-x86_64-unknown-linux-gnu "/tmp/gh_${GH_VERSION}_linux_amd64"
 
 ARG PLAYWRIGHT_VERSION=1.63.0
 ENV PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/ms-playwright \
