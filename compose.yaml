@@ -46,7 +46,7 @@ services:
       - nvim-state:${AGENT_HOME}/.local/state/nvim
       - whisper:${AGENT_HOME}/.local/share/whisper
       - ${AGENT_HOME}/tmp/pi-cache/git-credentials:/run/secrets/pi-git-credentials:ro
-      - herdr-sock:${AGENT_HOME}/.config/herdr
+      - ${AGENT_HOME}/tmp/pi-cache/herdr-bridge:${AGENT_HOME}/.config/herdr
       - outer-dind:/var/run/dind
 
   dind:
@@ -68,26 +68,20 @@ services:
       - ${AGENT_HOME}/projects:${AGENT_HOME}/projects
       - ${AGENT_HOME}/vaults/work/researches:${AGENT_HOME}/vaults/work/researches
       - ${AGENT_HOME}/vaults/work/incidents:${AGENT_HOME}/vaults/work/incidents
+    mem_limit: 4g
+    networks:
+      - pinet
     ports:
-      - "8600-8799:8600-8799"
+      - "127.0.0.1:8600-8699:8600-8699"
 
-  herdr-bridge:
-    image: alpine/socat@sha256:c5a091e1e735a90aa941a5828529dbe6c6157407a8047a9aa473faa133361b82
-    restart: unless-stopped
-    command:
-      - UNIX-LISTEN:/herdr-sock/herdr.sock,fork,mode=777,unlink-early,unlink-close
-      - TCP:192.168.5.2:4761
-    healthcheck:
-      test: ["CMD-SHELL", "netstat -lx | grep -q '/herdr-sock/herdr.sock'"]
-      interval: 3s
-      timeout: 5s
-      retries: 20
-      start_period: 3s
-    volumes:
-      - herdr-sock:/herdr-sock
+networks:
+  pinet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
 
 volumes:
-  herdr-sock:
   outer-dind:
   dind-data:
   gomodcache:
