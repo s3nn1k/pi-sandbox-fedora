@@ -74,7 +74,7 @@ RUN set -eux; \
       "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"; \
     chmod +x /usr/local/bin/yq; \
     curl -fsSL -o /usr/local/bin/yt-dlp \
-      "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux_x86_64"; \
+      "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux"; \
     chmod +x /usr/local/bin/yt-dlp; \
     curl -fsSL -o /tmp/nvim.tgz \
       "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"; \
