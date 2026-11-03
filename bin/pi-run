@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Запуск контейнера pi-агента. Перенос логики pi() из dotfiles/zshrc (Ф1).
 set -uo pipefail
-SBX="$HOME/pi-sandbox"
+SBX="$HOME/pi-sandbox-fedora"
 CACHE="$HOME/tmp/pi-cache"
 
 if [[ "${1:-}" == "--unsafe" ]]; then
@@ -30,12 +30,11 @@ if [[ $ok != 1 ]]; then
   exit 1
 fi
 
-for dep in jq rsync nc yq; do
+for dep in jq rsync nc; do
   command -v "$dep" >/dev/null 2>&1 || { echo "pi: нет зависимости $dep" >&2; exit 1; }
 done
 
 unset DOCKER_HOST
-export DOCKER_CONTEXT=colima
 
 run_to() {
   local timeout_s="$1"; shift
@@ -48,23 +47,10 @@ run_to() {
   return $rc
 }
 
-pi_vm_up() {
-  docker context inspect colima >/dev/null 2>&1 \
-    || docker context create colima --docker "host=unix://$HOME/.colima/default/docker.sock" >/dev/null 2>&1
-  docker context show | grep -qx colima || docker context use colima >/dev/null 2>&1
-  docker info >/dev/null 2>&1 && return 0
-  run_to 180 colima start >/dev/null 2>&1
-  docker info >/dev/null 2>&1 && return 0
-  if ! docker ps >/dev/null 2>&1; then
-    echo "pi: демон мёртв полностью (wedged VM) — сессии недостижимы, один жёсткий цикл" >&2
-  elif docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^pi-sess-'; then
-    echo "pi: живые pi-sess-* — жёсткий цикл VM запрещён; останови сессии или ре-ран" >&2
-    return 1
-  fi
-  run_to 60 colima stop >/dev/null 2>&1 && run_to 180 colima start >/dev/null 2>&1
-  docker info >/dev/null 2>&1
-}
-pi_vm_up || { echo "pi: docker-VM недоступна даже после пересоздания" >&2; exit 1; }
+systemctl is-active docker >/dev/null 2>&1 \
+  || { echo "pi: docker неактивен — sudo systemctl start docker" >&2; exit 1; }
+docker info >/dev/null 2>&1 \
+  || { echo "pi: docker недоступен (группа docker / re-login?)" >&2; exit 1; }
 
 export AGENT_HOME="$HOME" AGENT_UID="$(id -u)" AGENT_GID="$(id -g)" WORKDIR="$PWD"
 docker image inspect pi-agent-base >/dev/null 2>&1 \
@@ -80,24 +66,11 @@ else
     echo "pi: dind unhealthy — рестартую (живых сессий нет)" >&2
     docker compose -f "$SBX/compose.yaml" restart dind >/dev/null 2>&1
   fi
-  docker compose -f "$SBX/compose.yaml" up -d --wait --wait-timeout 180 dind herdr-bridge >/dev/null 2>&1 \
-    || { echo "pi: dind/herdr-bridge не поднялись (см. docker compose -f $SBX/compose.yaml logs)" >&2; exit 1; }
+  docker compose -f "$SBX/compose.yaml" up -d --wait --wait-timeout 180 dind >/dev/null 2>&1 \
+    || { echo "pi: dind не поднялся (см. docker compose -f $SBX/compose.yaml logs)" >&2; exit 1; }
   DIND_ID="$(docker compose -f "$SBX/compose.yaml" ps -q dind)"
 fi
 [ -n "${DIND_ID:-}" ] || { echo "pi: dind-id не найден" >&2; exit 1; }
-bind_srcs="$(docker compose -f "$SBX/compose.yaml" config --format json 2>/dev/null \
-  | jq -r '[.services[].volumes[]? | select(.type == "bind") | .source] | unique[]' 2>/dev/null)"
-[ -n "$bind_srcs" ] || { echo "pi: pre-flight: не смог разобрать bind-источники compose" >&2; exit 1; }
-for src in $bind_srcs; do
-  found=0
-  while IFS= read -r mnt; do
-    case "$src" in "$mnt"|"$mnt"/*) found=1; break ;; esac
-  done < <(yq -r '.mounts[].location' "$HOME/.colima/default/colima.yaml" 2>/dev/null)
-  [ "$found" = 1 ] || { echo "pi: bind-источник $src вне VM-маунтов — sandbox-sync + colima restart?" >&2; exit 1; }
-done
-
-[ -n "$DIND_ID" ] || { echo "pi: dind-id не найден" >&2; exit 1; }
-
 mkdir -p "$CACHE"
 sync_lock="$CACHE/.sync-lock"
 lock_tries=0
@@ -118,27 +91,12 @@ done
 echo $$ > "$sync_lock/pid"
 sync_lock_release() { [ "$(cat "$sync_lock/pid" 2>/dev/null)" = "$$" ] && rm -rf "$sync_lock"; }
 
-pi_bin="$(readlink -f "$(command -v pi 2>/dev/null)" 2>/dev/null)"
-PI_SRC=""
-for _ in 1 2 3 4; do
-  [ -n "$pi_bin" ] || break
-  pi_dir="$(dirname "$pi_bin")"
-  while [ "$pi_dir" != "/" ]; do
-    if jq -e '.name? == "@earendil-works/pi-coding-agent"' "$pi_dir/package.json" >/dev/null 2>&1; then
-      PI_SRC="$pi_dir"
-      break 2
-    fi
-    pi_dir="$(dirname "$pi_dir")"
-  done
-  pi_next="$(grep -oE '"/[^" ]+"' "$pi_bin" 2>/dev/null | head -1 | tr -d '"')"
-  [ -n "$pi_next" ] && [ "$pi_next" != "$pi_bin" ] || break
-  pi_bin="$(readlink -f "$pi_next" 2>/dev/null)"
-done
-if [ -z "$PI_SRC" ]; then
-  echo "pi: не нашёл пакет @earendil-works/pi-coding-agent за '${pi_command:-pi}' — рантайм для контейнера взять неоткуда" >&2
-  sync_lock_release
-  exit 1
-fi
+pi_ver="$(cat "$HOME/.pi/agent/install/current-version" 2>/dev/null)"
+PI_SRC="$HOME/.pi/agent/install/releases/$pi_ver/node_modules/@earendil-works/pi-coding-agent"
+[ -f "$PI_SRC/dist/bundle/cli.js" ] \
+  || { echo "pi: pi-рантайм не найден ($PI_SRC/dist/bundle/cli.js; current-version: ${pi_ver:-пусто}) — проверь ~/.pi/agent/install" >&2
+       sync_lock_release
+       exit 1; }
 
 mkdir -p "$CACHE/brain" "$CACHE/nvim" "$CACHE/dotfiles" "$CACHE/pi-runtime"
 rsync -a --copy-unsafe-links --delete --exclude /sessions --exclude /missions "$HOME/.pi/agent/" "$CACHE/brain/" &
@@ -147,12 +105,12 @@ rsync -a --delete "$PI_SRC/" "$CACHE/pi-runtime/" &
 rs_pi=$!
 rsync -a --delete "$HOME/.config/nvim/" "$CACHE/nvim/" &
 rs_nvim=$!
-rsync -a --delete --exclude .git "$HOME/dotfiles-mac/" "$CACHE/dotfiles/" &
+rsync -a --delete --exclude .git "$HOME/dotfiles-fedora/" "$CACHE/dotfiles/" &
 rs_dot=$!
 trap 'kill $rs_brain $rs_pi $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release' INT TERM HUP
 [ -d "$CACHE/gitconfig" ] && rm -rf "$CACHE/gitconfig"
-{ cat "$HOME/dotfiles-mac/gitconfig"; printf '\n[safe]\n\tdirectory = *\n'; } > "$CACHE/gitconfig" \
-  || { echo "pi: нет ~/dotfiles-mac/gitconfig" >&2; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
+{ cat "$HOME/dotfiles-fedora/gitconfig"; printf '\n[safe]\n\tdirectory = *\n'; } > "$CACHE/gitconfig" \
+  || { echo "pi: нет ~/dotfiles-fedora/gitconfig" >&2; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
 # git routing/identity chain: public ~/.gitconfig includes
 # ~/credentials/git/gitconfig -> per-remote identity files; identities are
 # per-remote (includeIf), so the container needs the real include chain, not a
@@ -167,7 +125,8 @@ trap 'kill $rs_brain $rs_pi $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_releas
 mkdir -p "$CACHE/credentials/git"
 for f in "$HOME/credentials/git/gitconfig" "$HOME/credentials/git/"*.gitconfig; do
   [ -f "$f" ] || continue
-  sed 's#\$HOME/pi-sandbox/bin/git-cred-read#$HOME/dotfiles/bin/git-cred-read#' "$f" \
+  sed -e 's#$HOME/pi-sandbox/bin/git-cred-read#$HOME/dotfiles/bin/git-cred-read#' \
+       -e 's#$HOME/.local/bin/git-cred-read#$HOME/dotfiles/bin/git-cred-read#' "$f" \
     > "$CACHE/credentials/git/$(basename "$f")" \
     || { echo "pi: сбой копирования $f" >&2; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
 done
@@ -195,7 +154,7 @@ while IFS= read -r c; do
   pgrep -f -- "${c}([^0-9]|$)" >/dev/null 2>&1 && continue
   s=$(docker inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null) || continue
   s=${s%%.*}; s=${s/T/ }
-  age=$(( $(date +%s) - $(date -u -j -f '%Y-%m-%d %H:%M:%S' "$s" +%s 2>/dev/null || echo 99999999999) ))
+  age=$(( $(date +%s) - $(date -u -d "$s" +%s 2>/dev/null || echo 99999999999) ))
   (( age > orphan_ttl )) && docker rm -f "$c" >/dev/null 2>&1
 done < <(docker ps --format '{{.Names}}' 2>/dev/null | grep '^pi-sess-')
 if [ -n "$(find "$CACHE/.dind-prune-stamp" -mtime +1 2>/dev/null)" ] || [ ! -f "$CACHE/.dind-prune-stamp" ]; then
@@ -204,7 +163,7 @@ if [ -n "$(find "$CACHE/.dind-prune-stamp" -mtime +1 2>/dev/null)" ] || [ ! -f "
   while IFS= read -r line; do
     cont_id="${line%% *}"; started="${line#* }"
     started="${started%%.*}"; started="${started/T/ }"
-    started_at=$(date -u -j -f '%Y-%m-%d %H:%M:%S' "$started" +%s 2>/dev/null) || continue
+    started_at=$(date -u -d "$started" +%s 2>/dev/null) || continue
     (( now - started_at > inner_ttl )) && docker exec "$DIND_ID" docker stop "$cont_id" >/dev/null 2>&1
   done < <(docker exec "$DIND_ID" docker inspect -f '{{.Id}} {{.State.StartedAt}}' \
     $(docker exec "$DIND_ID" docker ps -q 2>/dev/null) 2>/dev/null)
