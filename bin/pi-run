@@ -113,12 +113,16 @@ rs_nvim=$!
 rsync -a --delete --exclude .git "$HOME/dotfiles-fedora/" "$CACHE/dotfiles/" &
 rs_dot=$!
 trap 'kill $rs_brain $rs_pi $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release' INT TERM HUP
-[ -d "$CACHE/gitconfig" ] && rm -rf "$CACHE/gitconfig"
 { sed -e 's#~/\.config/git/credentials\.gitconfig#~/credentials/git/gitconfig#' \
        -e 's#$HOME/pi-sandbox/bin/git-cred-read#$HOME/dotfiles/bin/git-cred-read#' \
        -e 's#$HOME/.local/bin/git-cred-read#$HOME/dotfiles/bin/git-cred-read#' \
-       "$HOME/dotfiles-fedora/gitconfig"; printf '\n[safe]\n\tdirectory = *\n'; } > "$CACHE/gitconfig" \
-  || { echo "pi: нет ~/dotfiles-fedora/gitconfig" >&2; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
+       "$HOME/dotfiles-fedora/gitconfig"; printf '\n[safe]\n\tdirectory = *\n'; } > "$CACHE/.gitconfig.tmp" \
+  || { echo "pi: нет ~/dotfiles-fedora/gitconfig" >&2; rm -f "$CACHE/.gitconfig.tmp"; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
+if [ -d "$CACHE/gitconfig" ]; then
+  rm -rf "$CACHE/gitconfig"
+fi
+mv -f "$CACHE/.gitconfig.tmp" "$CACHE/gitconfig" \
+  || { echo "pi: не смог атомарно поставить $CACHE/gitconfig" >&2; rm -f "$CACHE/.gitconfig.tmp"; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
 # git routing/identity chain: public ~/.gitconfig includes
 # ~/credentials/git/gitconfig -> per-remote identity files; identities are
 # per-remote (includeIf), so the container needs the real include chain, not a
@@ -193,14 +197,16 @@ if [ -n "$nm_state" ] && [ "$nm_state" != running ]; then
   echo "pi: убран stale-контейнер $nm (state=$nm_state)" >&2
 fi
 mkdir -p "$CACHE/herdr-bridge"
+bind_srcs="$(docker compose -f "$SBX/compose.yaml" config --format json 2>/dev/null \
+  | jq -r '[.services[].volumes[]? | select(.type == "bind") | .source] | unique[]' 2>/dev/null)"
+[ -n "$bind_srcs" ] || { echo "pi: pre-flight: не смог разобрать bind-источники compose" >&2; exit 1; }
 while IFS= read -r src; do
   [ -e "$src" ] && continue
   case "$src" in
     */gitconfig|*/git-credentials) echo "pi: sync не создал $src" >&2; exit 1 ;;
     *) mkdir -p "$src" ;;
   esac
-done < <(docker compose -f "$SBX/compose.yaml" config --format json 2>/dev/null \
-  | jq -r '[.services[].volumes[]? | select(.type == "bind") | .source] | unique[]' 2>/dev/null)
+done <<<"$bind_srcs"
 HERDR_PANE_ID="$hpane" HERDR_AGENT=pi docker compose -f "$SBX/compose.yaml" run --rm --no-deps --name "$nm" pi-agent "$@"
 rc=$?
 reattach_tries=0
