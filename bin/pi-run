@@ -30,7 +30,7 @@ if [[ $ok != 1 ]]; then
   exit 1
 fi
 
-for dep in jq rsync nc; do
+for dep in jq rsync; do
   command -v "$dep" >/dev/null 2>&1 || { echo "pi: нет зависимости $dep" >&2; exit 1; }
 done
 
@@ -51,6 +51,11 @@ systemctl is-active docker >/dev/null 2>&1 \
   || { echo "pi: docker неактивен — sudo systemctl start docker" >&2; exit 1; }
 docker info >/dev/null 2>&1 \
   || { echo "pi: docker недоступен (группа docker / re-login?)" >&2; exit 1; }
+if ! systemctl is-active --quiet firewalld \
+   || ! firewall-cmd --info-zone docker 2>/dev/null | grep -qE '^[[:space:]]*target: %%REJECT%%[[:space:]]*$'; then
+  echo "pi: S2 неактивен (зона docker не REJECT / firewalld стоит) — прогони install.sh" >&2
+  exit 1
+fi
 
 export AGENT_HOME="$HOME" AGENT_UID="$(id -u)" AGENT_GID="$(id -g)" WORKDIR="$PWD"
 docker image inspect pi-agent-base >/dev/null 2>&1 \
@@ -82,7 +87,7 @@ until mkdir "$sync_lock" 2>/dev/null; do
     continue
   fi
   if { [ -z "$lock_pid" ] || ! kill -0 "$lock_pid" 2>/dev/null; } \
-     && ! pgrep -f 'pi-cache/(brain|nvim|dotfiles)' >/dev/null 2>&1; then
+     && ! pgrep -f 'pi-cache/(brain|nvim|dotfiles|pi-runtime)' >/dev/null 2>&1; then
     rm -rf "$sync_lock"
     continue
   fi
@@ -109,7 +114,10 @@ rsync -a --delete --exclude .git "$HOME/dotfiles-fedora/" "$CACHE/dotfiles/" &
 rs_dot=$!
 trap 'kill $rs_brain $rs_pi $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release' INT TERM HUP
 [ -d "$CACHE/gitconfig" ] && rm -rf "$CACHE/gitconfig"
-{ cat "$HOME/dotfiles-fedora/gitconfig"; printf '\n[safe]\n\tdirectory = *\n'; } > "$CACHE/gitconfig" \
+{ sed -e 's#~/\.config/git/credentials\.gitconfig#~/credentials/git/gitconfig#' \
+       -e 's#$HOME/pi-sandbox/bin/git-cred-read#$HOME/dotfiles/bin/git-cred-read#' \
+       -e 's#$HOME/.local/bin/git-cred-read#$HOME/dotfiles/bin/git-cred-read#' \
+       "$HOME/dotfiles-fedora/gitconfig"; printf '\n[safe]\n\tdirectory = *\n'; } > "$CACHE/gitconfig" \
   || { echo "pi: нет ~/dotfiles-fedora/gitconfig" >&2; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
 # git routing/identity chain: public ~/.gitconfig includes
 # ~/credentials/git/gitconfig -> per-remote identity files; identities are
@@ -184,6 +192,15 @@ if [ -n "$nm_state" ] && [ "$nm_state" != running ]; then
   docker rm -f "$nm" >/dev/null 2>&1
   echo "pi: убран stale-контейнер $nm (state=$nm_state)" >&2
 fi
+mkdir -p "$CACHE/herdr-bridge"
+while IFS= read -r src; do
+  [ -e "$src" ] && continue
+  case "$src" in
+    */gitconfig|*/git-credentials) echo "pi: sync не создал $src" >&2; exit 1 ;;
+    *) mkdir -p "$src" ;;
+  esac
+done < <(docker compose -f "$SBX/compose.yaml" config --format json 2>/dev/null \
+  | jq -r '[.services[].volumes[]? | select(.type == "bind") | .source] | unique[]' 2>/dev/null)
 HERDR_PANE_ID="$hpane" HERDR_AGENT=pi docker compose -f "$SBX/compose.yaml" run --rm --no-deps --name "$nm" pi-agent "$@"
 rc=$?
 reattach_tries=0
