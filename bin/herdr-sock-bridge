@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 import json
 import os
+import shutil
 import socket
+import stat
 import sys
 import threading
 import time
@@ -160,14 +162,30 @@ def bind_listen(listen_path):
 def self_heal(holder, listen_path):
     while True:
         time.sleep(5)
-        if os.path.exists(listen_path):
-            continue
         try:
-            holder[0].close()
-        except OSError:
-            pass
-        holder[0] = bind_listen(listen_path)
-        log("rebound after unlink")
+            try:
+                sock_ok = stat.S_ISSOCK(os.lstat(listen_path).st_mode)
+            except FileNotFoundError:
+                sock_ok = False
+            if sock_ok:
+                continue
+            if os.path.islink(listen_path):
+                os.unlink(listen_path)
+                log("removed symlink at %s" % listen_path)
+            elif os.path.isdir(listen_path):
+                shutil.rmtree(listen_path)
+                log("removed directory at %s" % listen_path)
+            elif os.path.lexists(listen_path):
+                os.unlink(listen_path)
+                log("removed file at %s" % listen_path)
+            try:
+                holder[0].close()
+            except OSError:
+                pass
+            holder[0] = bind_listen(listen_path)
+            log("rebound after replacement")
+        except Exception as exc:
+            log("heal cycle failed: %s" % exc)
 
 
 def main():
@@ -176,6 +194,7 @@ def main():
     log("listening on %s -> %s (allow: %s)"
         % (listen_path, SOCK_PATH, ", ".join(sorted(ALLOWED_METHODS))))
 
+    threading.Thread(target=self_heal, args=(holder, listen_path), daemon=True).start()
     wait_start = time.time()
     waited_notice = 0
     while not os.path.exists(SOCK_PATH):
@@ -185,7 +204,6 @@ def main():
             waited_notice = waited
             log("waiting for %s (%d min)" % (SOCK_PATH, waited))
 
-    threading.Thread(target=self_heal, args=(holder, listen_path), daemon=True).start()
     while True:
         try:
             client, _ = holder[0].accept()
