@@ -8,6 +8,7 @@ services:
     working_dir: ${WORKDIR}
     tty: true
     init: true
+    pids_limit: 4096
     network_mode: "service:dind"
     environment:
       HOME: ${AGENT_HOME}
@@ -53,6 +54,7 @@ services:
     image: docker@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0
     command: dockerd --host=unix:///var/run/docker.sock --group=${AGENT_GID:-1000} --data-root=/var/lib/docker
     privileged: true
+    pids_limit: 8192
     restart: unless-stopped
     environment:
       DOCKER_TLS_CERTDIR: ""
