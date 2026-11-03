@@ -1,50 +1,36 @@
 #!/usr/bin/env bash
-# Регенерирует mounts в ~/.colima/default/colima.yaml из ~/.config/pi/pi-mounts.
-# Список живёт ВНЕ агенто-доступных путей (не в VM-корнях и не в compose-маунтах):
-# граница безопасности не должна быть редактируема агентом.
-# После изменения списка: sandbox-sync && colima restart
-set -euo pipefail
-list="$HOME/pi-sandbox/pi-mounts"
-cfg="$HOME/.colima/default/colima.yaml"
-[ -f "$cfg" ] || { echo "нет $cfg (colima не настроен?)" >&2; exit 1; }
-entries=()
-while IFS= read -r rel; do
-  case "$rel" in
-    ""|"#"*) continue ;;
-  esac
-  marker="${rel#* }"; rel="${rel%% *}"
-  [ "$marker" = "$rel" ] && marker=""
-  case " $marker " in *" root-only "*) continue ;; esac
-  case " $marker " in *" ro "*) writable=false ;; *) writable=true ;; esac
-  if [[ "$(printf '%s' "$rel" | tr -c '[:alnum:]/._-' 'X')" == *X* \
-        || "$rel" == /* || "$rel" == *..* || "$rel" == "." ]]; then
-    echo "недопустимая строка в \$list: '$rel' (ожидается относительный путь без .. и спецсимволов)" >&2
-    exit 1
-  fi
-  entries+=("{\"location\": \"$HOME/$rel\", \"writable\": $writable}")
-done < "$list"
-joined=$(IFS=,; echo "${entries[*]}")
-yq -i ".mounts = [$joined]" "$cfg"
-PROVISION_SCRIPT='#!/bin/sh
-i=0
-while [ $i -lt 60 ]; do iptables -L DOCKER-USER >/dev/null 2>&1 && break; sleep 2; i=$((i+1)); done
-iptables -L DOCKER-USER >/dev/null 2>&1 || { echo "pi-firewall: DOCKER-USER not ready" >&2; exit 1; }
-iptables --wait 5 -C DOCKER-USER -d 192.168.5.2/32 -j DROP 2>/dev/null || iptables --wait 5 -I DOCKER-USER 1 -d 192.168.5.2/32 -j DROP
-iptables --wait 5 -C DOCKER-USER -d 192.168.5.2/32 -p tcp --dport 4761 -j RETURN 2>/dev/null || iptables --wait 5 -I DOCKER-USER 1 -d 192.168.5.2/32 -p tcp --dport 4761 -j RETURN
-iptables --wait 5 -C DOCKER-USER -d 192.168.5.2/32 -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null || iptables --wait 5 -I DOCKER-USER 1 -d 192.168.5.2/32 -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-iptables --wait 5 -C OUTPUT -d 192.168.5.2/32 -p tcp -m conntrack --ctstate NEW -j DROP 2>/dev/null || iptables --wait 5 -I OUTPUT 1 -d 192.168.5.2/32 -p tcp -m conntrack --ctstate NEW -j DROP
+set -uo pipefail
+SBX="$HOME/pi-sandbox-fedora"
 
-est_line=$(iptables -S DOCKER-USER | grep -n "ESTABLISHED,RELATED -j RETURN" | head -1 | cut -d: -f1)
-drop_line=$(iptables -S DOCKER-USER | grep -n "\-j DROP" | head -1 | cut -d: -f1)
-[ -n "$est_line" ] && [ -n "$drop_line" ] && [ "$est_line" -lt "$drop_line" ] \
-  || { echo "pi-firewall: rule order broken" >&2; exit 1; }
-iptables -C DOCKER-USER -d 192.168.5.2/32 -j DROP 2>/dev/null \
-  || { echo "pi-firewall: DROP missing" >&2; exit 1; }
-iptables -C OUTPUT -d 192.168.5.2/32 -p tcp -m conntrack --ctstate NEW -j DROP 2>/dev/null \
-  || { echo "pi-firewall: OUTPUT missing" >&2; exit 1; }
-'
-PROVISION_SCRIPT="$PROVISION_SCRIPT" yq -i \
-  '.provision = [{"mode": "system", "script": strenv(PROVISION_SCRIPT)}]' "$cfg"
+status=0
+fail() {
+  echo "sandbox-sync: FAIL: $1" >&2
+  status=1
+}
 
+grep -qF '172.28.0.0/24' "$SBX/compose.yaml" \
+  || fail "в $SBX/compose.yaml нет закреплённой подсети 172.28.0.0/24"
 
-echo "mounts обновлены (${#entries[@]} шт) + provision firewall; примените colima restart, если VM работает"
+if zone_info="$(firewall-cmd --info-zone docker 2>/dev/null)"; then
+  grep -q '^target: %%REJECT%%$' <<<"$zone_info" \
+    || fail "target зоны docker не %%REJECT%% (см. firewall-cmd --info-zone docker) — прогони install.sh"
+else
+  fail "зоны docker нет — появится после первого старта docker; прогони install.sh"
+fi
+
+systemctl --user is-active --quiet herdr-bridge \
+  || fail "юнит herdr-bridge не активен — systemctl --user enable --now herdr-bridge"
+
+if docker info >/dev/null 2>&1; then
+  docker image inspect pi-agent-base >/dev/null 2>&1 \
+    || fail "образа pi-agent-base нет — make -C $SBX image"
+else
+  echo "sandbox-sync: WARN: docker недоступен — проверка образа pi-agent-base пропущена" >&2
+fi
+
+if [ "$status" = 0 ]; then
+  echo "sandbox-sync: ok — compose-подсеть 172.28.0.0/24, зона docker REJECT, herdr-bridge активен, образ на месте"
+else
+  echo "sandbox-sync: FAIL — исправь проверки выше" >&2
+fi
+exit "$status"
