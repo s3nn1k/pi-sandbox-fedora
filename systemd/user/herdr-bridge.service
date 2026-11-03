@@ -1,0 +1,8 @@
+[Unit]
+Description=pi-sandbox herdr bridge (unix socket, method whitelist)
+[Service]
+ExecStartPre=/usr/bin/mkdir -p %h/tmp/pi-cache/herdr-bridge
+ExecStart=%h/pi-sandbox-fedora/bin/herdr-sock-bridge
+Restart=always
+[Install]
+WantedBy=default.target

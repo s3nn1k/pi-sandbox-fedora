@@ -6,8 +6,8 @@ import sys
 import threading
 import time
 
-PORT = 4761
 SOCK_PATH = os.path.expanduser("~/.config/herdr/herdr.sock")
+DEFAULT_LISTEN_PATH = os.path.expanduser("~/tmp/pi-cache/herdr-bridge/herdr.sock")
 ALLOWED_METHODS = {"pane.report_agent", "pane.report_agent_session"}
 MAX_LINE = 1024 * 1024  # защита от переполнения буфера мусором без \n
 
@@ -135,6 +135,7 @@ def _handle(client):
 
 
 def main():
+    listen_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_LISTEN_PATH
     wait_start = time.time()
     waited_notice = 0
     while not os.path.exists(SOCK_PATH):
@@ -144,12 +145,19 @@ def main():
             waited_notice = waited
             log("waiting for %s (%d min)" % (SOCK_PATH, waited))
 
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("127.0.0.1", PORT))
+    listen_dir = os.path.dirname(listen_path)
+    if listen_dir:
+        os.makedirs(listen_dir, exist_ok=True)
+    try:
+        os.unlink(listen_path)
+    except FileNotFoundError:
+        pass
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(listen_path)
+    os.chmod(listen_path, 0o666)
     server.listen(16)
-    log("listening on 127.0.0.1:%d -> %s (allow: %s)"
-        % (PORT, SOCK_PATH, ", ".join(sorted(ALLOWED_METHODS))))
+    log("listening on %s -> %s (allow: %s)"
+        % (listen_path, SOCK_PATH, ", ".join(sorted(ALLOWED_METHODS))))
 
     while True:
         client, _ = server.accept()
