@@ -1,3 +1,0 @@
-block drop quick on lo0 proto tcp to port 10808
-block drop quick on lo0 proto tcp to port 10809
-block drop quick proto tcp from ! 127.0.0.1 to any port 2375
