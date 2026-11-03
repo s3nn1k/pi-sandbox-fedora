@@ -157,20 +157,35 @@ def bind_listen(listen_path):
     return server
 
 
+def bind_holder(listen_path):
+    server = bind_listen(listen_path)
+    return [server, os.stat(listen_path).st_ino]
+
+
 def self_heal(holder, listen_path):
+    failures = 0
     while True:
         time.sleep(5)
         try:
+            sock_ok = False
+            foreign = False
             try:
-                sock_ok = stat.S_ISSOCK(os.lstat(listen_path).st_mode)
+                st = os.lstat(listen_path)
+                sock_ok = stat.S_ISSOCK(st.st_mode)
+                foreign = sock_ok and st.st_ino != holder[1]
             except FileNotFoundError:
-                sock_ok = False
-            if sock_ok:
+                pass
+            if sock_ok and not foreign:
+                failures = 0
                 continue
-            if os.path.islink(listen_path):
+            if foreign:
+                os.unlink(listen_path)
+                log("foreign socket replaced at %s" % listen_path)
+            elif os.path.islink(listen_path):
                 os.unlink(listen_path)
                 log("removed symlink at %s" % listen_path)
             elif os.path.isdir(listen_path):
+                os.chmod(listen_path, 0o700)
                 shutil.rmtree(listen_path)
                 log("removed directory at %s" % listen_path)
             elif os.path.lexists(listen_path):
@@ -180,15 +195,20 @@ def self_heal(holder, listen_path):
                 holder[0].close()
             except OSError:
                 pass
-            holder[0] = bind_listen(listen_path)
+            holder[:] = bind_holder(listen_path)
             log("rebound after replacement")
+            failures = 0
         except Exception as exc:
-            log("heal cycle failed: %s" % exc)
+            failures += 1
+            log("heal cycle failed (%d): %s" % (failures, exc))
+            if failures >= 3:
+                log("self-heal exhausted, restarting via systemd")
+                os._exit(1)
 
 
 def main():
     listen_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_LISTEN_PATH
-    holder = [bind_listen(listen_path)]
+    holder = bind_holder(listen_path)
     log("listening on %s -> %s (allow: %s)"
         % (listen_path, SOCK_PATH, ", ".join(sorted(ALLOWED_METHODS))))
 
