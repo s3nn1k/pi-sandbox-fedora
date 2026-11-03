@@ -48,15 +48,17 @@ host (Fedora 44 x86_64, docker 29 native, firewalld)
   DOCKER-USER его не фильтрует - mac-правила не переносились.
 - Публикация портов: только 127.0.0.1:8600-8699; docker держит docker-proxy на каждый
   порт - диапазон сжат со 180 до 100 под 8G RAM+zram.
+- pids_limit: pi-agent 4096, dind 8192 - fork-bomb в контейнере не валит хост (ранее это
+  держала VM).
 - Сокет dind - volume outer-dind, группа = gid агента.
 
 ## Установка
 
-`./install.sh`: депы (dnf-подсказки) -> firewalld (зона docker -> %%REJECT%%, verify
-fail-loud; зоны нет - WARN и ре-ран после первого старта docker) -> docker (enable/info)
--> корни pi-mounts, симлинк sandbox-sync в ~/.local/bin -> systemd --user юнит
-herdr-bridge -> guard живых сессий -> make image + seeds (WARN-фолбэк). Идемпотентен.
-Проверка окружения: `sandbox-sync`.
+`./install.sh`: guard живых сессий -> депы (dnf-подсказки) -> firewalld (зона docker
+создаётся при отсутствии, target %%REJECT%%, verify fail-loud) -> docker (enable/info) ->
+корни pi-mounts, симлинк sandbox-sync в ~/.local/bin -> systemd --user юнит herdr-bridge
+(try-restart подхватывает новый код моста) -> make image + seeds (WARN-фолбэк).
+Идемпотентен. Проверка окружения: `sandbox-sync`.
 
 ## Security-инварианты
 
@@ -78,6 +80,10 @@ vault-файл единственный источник правды.
 - zram-своп: перегруз бьёт по интерактивности хоста;
 - docker-proxy: по процессу на публикуемый порт (100 портов диапазона);
 - GOSUMDB=off скопирован с mac (VPN): новые go-зависимости без проверки sum-db;
+- зона docker общая для всех сетей демона: REJECT режет контейнер -> хост и для сторонних
+  ворклоадов docker; на этом хосте демон принадлежит песочнице - принято;
+- pinet 172.28.0.0/24: занятая подсеть -> детерминированный отказ compose (Pool overlaps);
+  диапазон вне mihomo fake-ip (198.18.0.0/16) и LAN;
 - ротация агентского токена действует со следующего запуска pi.
 
 ## Runbook
