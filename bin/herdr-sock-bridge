@@ -117,9 +117,7 @@ def _handle(client):
 
             if method in ALLOWED_METHODS:
                 try:
-                    payload = {"method": method, "id": request_id}
-                    if "params" in request:
-                        payload["params"] = request["params"]
+                    payload = dict(request)
                     upstream.sendall(json.dumps(payload).encode("utf-8") + b"\n")
                 except OSError:
                     return
