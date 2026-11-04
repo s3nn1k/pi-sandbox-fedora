@@ -158,10 +158,10 @@ PI_SRC="$HOME/.pi/agent/install/releases/$pi_ver/node_modules/@earendil-works/pi
        sync_lock_release
        exit 1; }
 
-mkdir -p "$CACHE/brain" "$CACHE/nvim" "$CACHE/dotfiles" "$CACHE/pi-runtime"
+mkdir -p "$CACHE/brain" "$CACHE/nvim" "$CACHE/dotfiles" "$CACHE/pi-runtime/node_modules"
 rsync -a --copy-unsafe-links --delete --exclude /sessions --exclude /missions "$HOME/.pi/agent/" "$CACHE/brain/" &
 rs_brain=$!
-rsync -a --delete "$PI_SRC/" "$CACHE/pi-runtime/" &
+rsync -a --delete --exclude /node_modules "$PI_SRC/" "$CACHE/pi-runtime/" &
 rs_pi=$!
 rsync -a --delete "$HOME/.config/nvim/" "$CACHE/nvim/" &
 rs_nvim=$!
@@ -205,6 +205,11 @@ wait $rs_brain || sync_fail=1
 wait $rs_pi || sync_fail=1
 wait $rs_nvim || sync_fail=1
 wait $rs_dot || sync_fail=1
+# TODO(pi upstream): лоадер расширений pi дергает голый require('jiti') от каталога
+# бандла, поэтому pi-runtime нужен свой node_modules/jiti. Спилить блок, когда в pi
+# уберут голый require('jiti') — вшитая копия уже есть в бандле.
+rsync -a --delete "$HOME/.pi/agent/install/releases/$pi_ver/node_modules/jiti/" \
+  "$CACHE/pi-runtime/node_modules/jiti/" || sync_fail=1
 mkdir -p "$CACHE/dotfiles/bin" \
   && install -m 755 "$SBX/bin/git-cred-read" "$CACHE/dotfiles/bin/git-cred-read" \
   && install -m 755 "$SBX/bin/pi" "$CACHE/dotfiles/bin/pi" \
