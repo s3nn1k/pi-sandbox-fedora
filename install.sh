@@ -41,8 +41,8 @@ fi
 firewall-cmd --info-zone docker 2>/dev/null | grep -qE '^[[:space:]]*target: %%REJECT%%[[:space:]]*$' \
   || { echo "install: target зоны docker не применился после reload" >&2; exit 1; }
 
-sed "s|__HOME__|${HOME}|g" "${SBX}/systemd/system/pi-sandbox-guard.service" \
-  | sudo tee /etc/systemd/system/pi-sandbox-guard.service >/dev/null
+sudo install -Dm 644 "${SBX}/nft/pi-sandbox-guard.nft" /etc/pi-sandbox/guard.nft
+sudo install -m 644 "${SBX}/systemd/system/pi-sandbox-guard.service" /etc/systemd/system/pi-sandbox-guard.service
 sudo systemctl daemon-reload
 sudo systemctl enable pi-sandbox-guard
 sudo systemctl restart pi-sandbox-guard
