@@ -11,6 +11,9 @@ fail() {
 grep -qF '172.28.0.0/24' "$SBX/compose.yaml" \
   || fail "в $SBX/compose.yaml нет закреплённой подсети 172.28.0.0/24"
 
+[ -f /run/pi-sandbox-guard.active ] \
+  || fail "нет штампа /run/pi-sandbox-guard.active — прогони install.sh"
+
 if zone_info="$(firewall-cmd --info-zone docker 2>/dev/null)"; then
   grep -qE '^[[:space:]]*target: %%REJECT%%[[:space:]]*$' <<<"$zone_info" \
     || fail "target зоны docker не %%REJECT%% (см. firewall-cmd --info-zone docker) — прогони install.sh"
@@ -28,8 +31,12 @@ else
   echo "sandbox-sync: WARN: docker недоступен — проверка образа pi-agent-base пропущена" >&2
 fi
 
+if ! ip link show pi-sbx0 >/dev/null 2>&1; then
+  echo "sandbox-sync: WARN: bridge pi-sbx0 нет — норма до первого запуска compose" >&2
+fi
+
 if [ "$status" = 0 ]; then
-  echo "sandbox-sync: ok — compose-подсеть 172.28.0.0/24, зона docker REJECT, herdr-bridge активен, образ на месте"
+  echo "sandbox-sync: ok — compose-подсеть 172.28.0.0/24, guard активен, зона docker REJECT, herdr-bridge активен, образ на месте"
 else
   echo "sandbox-sync: FAIL — исправь проверки выше" >&2
 fi
