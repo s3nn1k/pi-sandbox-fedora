@@ -1,0 +1,7 @@
+table inet pi_sandbox_guard {
+  chain prerouting_guard {
+    type filter hook prerouting priority -110; policy accept;
+    iifname "pi-sbx0" ct state { established, related } counter return
+    iifname "pi-sbx0" fib daddr type local counter drop
+  }
+}

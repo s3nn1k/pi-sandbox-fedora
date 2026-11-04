@@ -11,11 +11,12 @@ fi
 dep_pkg() {
   case "${1}" in
     firewall-cmd) echo firewalld ;;
+    nft) echo nftables ;;
     docker) echo docker-ce ;;
     *) echo "${1}" ;;
   esac
 }
-for dep in git make curl jq rsync python3 systemctl firewall-cmd docker; do
+for dep in git make curl jq rsync python3 systemctl firewall-cmd nft docker; do
   command -v "${dep}" >/dev/null 2>&1 \
     || { echo "install: нет зависимости ${dep} — sudo dnf install $(dep_pkg "${dep}")" >&2; exit 1; }
 done
@@ -39,6 +40,18 @@ if ! firewall-cmd --info-zone docker 2>/dev/null | grep -qE '^[[:space:]]*target
 fi
 firewall-cmd --info-zone docker 2>/dev/null | grep -qE '^[[:space:]]*target: %%REJECT%%[[:space:]]*$' \
   || { echo "install: target зоны docker не применился после reload" >&2; exit 1; }
+
+sed "s|__HOME__|${HOME}|g" "${SBX}/systemd/system/pi-sandbox-guard.service" \
+  | sudo tee /etc/systemd/system/pi-sandbox-guard.service >/dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable pi-sandbox-guard
+sudo systemctl restart pi-sandbox-guard
+systemctl is-active --quiet pi-sandbox-guard \
+  || { echo "install: юнит pi-sandbox-guard не активен (journalctl -u pi-sandbox-guard)" >&2; exit 1; }
+sudo nft list table inet pi_sandbox_guard 2>/dev/null | grep -q prerouting_guard \
+  || { echo "install: nft-таблицы pi_sandbox_guard с prerouting_guard нет после старта юнита" >&2; exit 1; }
+[ -f /run/pi-sandbox-guard.active ] \
+  || { echo "install: нет штампа /run/pi-sandbox-guard.active" >&2; exit 1; }
 
 systemctl is-enabled --quiet docker \
   || { echo "install: docker не в автозапуске — sudo systemctl enable --now docker" >&2; exit 1; }

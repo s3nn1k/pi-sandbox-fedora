@@ -1,0 +1,14 @@
+[Unit]
+Description=pi-sandbox host boundary guard (pre-DNAT nft)
+Before=docker.service
+After=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'nft list table inet pi_sandbox_guard >/dev/null 2>&1 && nft delete table inet pi_sandbox_guard; nft -f __HOME__/pi-sandbox-fedora/nft/pi-sandbox-guard.nft && nft list table inet pi_sandbox_guard >/dev/null && touch /run/pi-sandbox-guard.active'
+ExecReload=/bin/sh -c 'nft list table inet pi_sandbox_guard >/dev/null 2>&1 && nft delete table inet pi_sandbox_guard; nft -f __HOME__/pi-sandbox-fedora/nft/pi-sandbox-guard.nft && nft list table inet pi_sandbox_guard >/dev/null && touch /run/pi-sandbox-guard.active'
+ExecStop=/bin/sh -c 'rm -f /run/pi-sandbox-guard.active; nft list table inet pi_sandbox_guard >/dev/null 2>&1 && nft delete table inet pi_sandbox_guard || true'
+
+[Install]
+WantedBy=multi-user.target

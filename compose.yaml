@@ -79,6 +79,8 @@ services:
 networks:
   pinet:
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: pi-sbx0
     ipam:
       config:
         - subnet: 172.28.0.0/24
