@@ -205,11 +205,13 @@ wait $rs_brain || sync_fail=1
 wait $rs_pi || sync_fail=1
 wait $rs_nvim || sync_fail=1
 wait $rs_dot || sync_fail=1
-# TODO(pi upstream): лоадер расширений pi дергает голый require('jiti') от каталога
-# бандла, поэтому pi-runtime нужен свой node_modules/jiti. Спилить блок, когда в pi
-# уберут голый require('jiti') — вшитая копия уже есть в бандле.
-rsync -a --delete "$HOME/.pi/agent/install/releases/$pi_ver/node_modules/jiti/" \
-  "$CACHE/pi-runtime/node_modules/jiti/" || sync_fail=1
+# TODO(pi upstream): бандл pi в рантайме делает bare require внешних пакетов от
+# каталога бандла (jiti, quickjs-wasi/quickjs.wasm, typebox) — pi-runtime нужен свой
+# node_modules. Спилить блок, когда pi перестанет требовать внешние рантайм-пакеты.
+for rs_pkg in jiti quickjs-wasi typebox; do
+  rsync -a --delete "$HOME/.pi/agent/install/releases/$pi_ver/node_modules/$rs_pkg/" \
+    "$CACHE/pi-runtime/node_modules/$rs_pkg/" || sync_fail=1
+done
 mkdir -p "$CACHE/dotfiles/bin" \
   && install -m 755 "$SBX/bin/git-cred-read" "$CACHE/dotfiles/bin/git-cred-read" \
   && install -m 755 "$SBX/bin/pi" "$CACHE/dotfiles/bin/pi" \
