@@ -23,6 +23,9 @@ done
 
 chmod +x "${SBX}/bin/"*
 
+sudo install -Dm 644 "${SBX}/polkit/49-pi-sandbox-firewalld-inspect.rules" \
+  /etc/polkit-1/rules.d/49-pi-sandbox-firewalld-inspect.rules
+
 if ! systemctl is-active --quiet firewalld; then
   echo "install: firewalld неактивен — sudo systemctl start firewalld" >&2
   exit 1
