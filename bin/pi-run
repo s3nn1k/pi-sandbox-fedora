@@ -30,7 +30,7 @@ if [[ $ok != 1 ]]; then
   exit 1
 fi
 
-for dep in jq rsync; do
+for dep in ip jq python3 rsync; do
   command -v "$dep" >/dev/null 2>&1 || { echo "pi: нет зависимости $dep" >&2; exit 1; }
 done
 
@@ -92,6 +92,44 @@ if ! bridge_pinned; then
   DIND_ID="$(docker compose -f "$SBX/compose.yaml" ps -q dind)"
   bridge_pinned \
     || { echo "pi: pi-sbx0 не появился после пересоздания сети — проверь driver_opts com.docker.network.bridge.name в compose.yaml" >&2; exit 1; }
+fi
+if [ "$live_sess" -eq 0 ]; then
+  probe_out="$(mktemp)"
+  python3 -c '
+import socket
+import time
+
+listener = socket.socket()
+listener.bind(("172.28.0.1", 0))
+listener.listen(1)
+print(listener.getsockname()[1], flush=True)
+while True:
+    time.sleep(3600)
+' >"$probe_out" &
+  probe_pid=$!
+  probe_cleanup() {
+    kill "$probe_pid" 2>/dev/null
+    wait "$probe_pid" 2>/dev/null
+    rm -f "$probe_out"
+  }
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    probe_port="$(head -n 1 "$probe_out")"
+    [ -n "$probe_port" ] && break
+    sleep 0.5
+  done
+  [ -n "$probe_port" ] && kill -0 "$probe_pid" 2>/dev/null \
+    || { echo "pi: проба guard: слушатель на 172.28.0.1 не поднялся" >&2; probe_cleanup; exit 1; }
+  python3 -c 'import socket, sys
+socket.create_connection(("172.28.0.1", int(sys.argv[1])), timeout=2).close()' "$probe_port" \
+    || { echo "pi: проба guard: 172.28.0.1:$probe_port не отвечает с хоста" >&2; probe_cleanup; exit 1; }
+  docker image inspect alpine >/dev/null 2>&1 || docker pull -q alpine >/dev/null 2>&1 \
+    || { echo "pi: проба guard: нет образа alpine — docker pull alpine" >&2; probe_cleanup; exit 1; }
+  if run_to 15 docker run --rm --network pi-agent_pinet alpine nc -w 2 -z 172.28.0.1 "$probe_port"; then
+    echo "pi: nft-guard не держит трафик (проба из pinet прошла насквозь) — systemctl restart pi-sandbox-guard / прогони install.sh" >&2
+    probe_cleanup
+    exit 1
+  fi
+  probe_cleanup
 fi
 mkdir -p "$CACHE"
 sync_lock="$CACHE/.sync-lock"
