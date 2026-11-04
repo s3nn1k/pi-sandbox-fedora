@@ -54,7 +54,7 @@ systemctl is-active docker >/dev/null 2>&1 \
 docker info >/dev/null 2>&1 \
   || { echo "pi: docker недоступен (группа docker / re-login?)" >&2; exit 1; }
 if ! systemctl is-active --quiet firewalld \
-   || ! firewall-cmd --info-zone docker 2>/dev/null | grep -qE '^[[:space:]]*target: %%REJECT%%[[:space:]]*$'; then
+   || ! firewall-cmd --zone=docker --list-all 2>/dev/null | grep -qE '^[[:space:]]*target: %%REJECT%%[[:space:]]*$'; then
   echo "pi: S2 неактивен (зона docker не REJECT / firewalld стоит) — прогони install.sh" >&2
   exit 1
 fi
