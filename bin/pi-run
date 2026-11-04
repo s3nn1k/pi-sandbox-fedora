@@ -47,6 +47,8 @@ run_to() {
   return $rc
 }
 
+bridge_pinned() { ip -o link show pi-sbx0 >/dev/null 2>&1; }
+
 systemctl is-active docker >/dev/null 2>&1 \
   || { echo "pi: docker неактивен — sudo systemctl start docker" >&2; exit 1; }
 docker info >/dev/null 2>&1 \
@@ -56,6 +58,8 @@ if ! systemctl is-active --quiet firewalld \
   echo "pi: S2 неактивен (зона docker не REJECT / firewalld стоит) — прогони install.sh" >&2
   exit 1
 fi
+[ -f /run/pi-sandbox-guard.active ] \
+  || { echo "pi: nft-guard не активен (systemctl status pi-sandbox-guard; прогони install.sh)" >&2; exit 1; }
 
 export AGENT_HOME="$HOME" AGENT_UID="$(id -u)" AGENT_GID="$(id -g)" WORKDIR="$PWD"
 docker image inspect pi-agent-base >/dev/null 2>&1 \
@@ -76,6 +80,19 @@ else
   DIND_ID="$(docker compose -f "$SBX/compose.yaml" ps -q dind)"
 fi
 [ -n "${DIND_ID:-}" ] || { echo "pi: dind-id не найден" >&2; exit 1; }
+if ! bridge_pinned; then
+  if [ "$live_sess" -gt 0 ]; then
+    echo "pi: pinet со старым hash-bridge (pi-sbx0 нет), живые сессии есть — пересоздание сети осиротит их; останови pi и прогони install.sh" >&2
+    exit 1
+  fi
+  echo "pi: pinet со старым hash-bridge (pi-sbx0 нет) — пересоздаю сеть проекта (живых сессий нет)" >&2
+  docker compose -f "$SBX/compose.yaml" down \
+    && docker compose -f "$SBX/compose.yaml" up -d --wait --wait-timeout 180 dind >/dev/null 2>&1 \
+    || { echo "pi: пересоздание сети не удалось (см. docker compose -f $SBX/compose.yaml logs)" >&2; exit 1; }
+  DIND_ID="$(docker compose -f "$SBX/compose.yaml" ps -q dind)"
+  bridge_pinned \
+    || { echo "pi: pi-sbx0 не появился после пересоздания сети — проверь driver_opts com.docker.network.bridge.name в compose.yaml" >&2; exit 1; }
+fi
 mkdir -p "$CACHE"
 sync_lock="$CACHE/.sync-lock"
 lock_tries=0
@@ -221,6 +238,8 @@ while [ $rc -ne 0 ]; do
   echo "pi: связь с контейнером оборвалась — переподключаюсь к живой сессии ($reattach_tries/10)" >&2
   docker compose -f "$SBX/compose.yaml" up -d --wait --wait-timeout 180 dind >/dev/null 2>&1 \
     || { echo "pi: dind не ожил — reattach отменён" >&2; rc=1; break; }
+  bridge_pinned \
+    || { echo "pi: pi-sbx0 пропал при reattach-up — сеть пересоздана без pinned bridge; перезапусти pi" >&2; rc=1; break; }
   sess_net="$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$nm" 2>/dev/null)"
   if [ "$sess_net" != "container:$DIND_ID" ]; then
     echo "pi: сессия осиротела (dind пересоздан: $sess_net ≠ container:$DIND_ID) — нужен перезапуск pi" >&2
