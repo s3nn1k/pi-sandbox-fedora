@@ -22,6 +22,9 @@ sg docker -c 'cd ~/pi-sandbox-fedora && ./install.sh'
 Идемпотентен: зона firewalld docker -> target %%REJECT%%, systemd --user юнит
 herdr-bridge, образ и сиды (make image seeds).
 
+Границу хоста держит юнит pi-sandbox-guard: nft-таблица с pre-DNAT drop трафика из pi-sbx0
+к локальным адресам хоста загружается до docker.
+
 ## Использование
 
 Из проекта (корни запуска - pi-mounts):
@@ -31,6 +34,8 @@ pi
 ```
 
 - pi --unsafe - хостовый pi; конфиг-подкоманды (update/mcp/auth/...) - тоже хостовые.
+- Без активного nft-guard pi отказывает в запуске (stamp /run/pi-sandbox-guard.active) -
+  прогони install.sh.
 - Порты тест-стеков: 127.0.0.1:8600-8699.
 - Проверка окружения: sandbox-sync.
 - Живые сессии: docker ps --format '{{.Names}}' | grep pi-sess; при обрыве связи pi-run
