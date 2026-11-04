@@ -122,9 +122,9 @@ while True:
   python3 -c 'import socket, sys
 socket.create_connection(("172.28.0.1", int(sys.argv[1])), timeout=2).close()' "$probe_port" \
     || { echo "pi: проба guard: 172.28.0.1:$probe_port не отвечает с хоста" >&2; probe_cleanup; exit 1; }
-  docker image inspect alpine >/dev/null 2>&1 || docker pull -q alpine >/dev/null 2>&1 \
-    || { echo "pi: проба guard: нет образа alpine — docker pull alpine" >&2; probe_cleanup; exit 1; }
-  if run_to 15 docker run --rm --network pi-agent_pinet alpine nc -w 2 -z 172.28.0.1 "$probe_port"; then
+  if run_to 15 docker run --rm --network pi-agent_pinet --entrypoint node pi-agent-base \
+    -e 'const net=require("net");const s=net.connect({host:"172.28.0.1",port:process.argv[1]},()=>{s.destroy();process.exit(0)});s.on("error",()=>process.exit(1));setTimeout(()=>{s.destroy();process.exit(1)},4000).unref();' \
+    "$probe_port"; then
     echo "pi: nft-guard не держит трафик (проба из pinet прошла насквозь) — systemctl restart pi-sandbox-guard / прогони install.sh" >&2
     probe_cleanup
     exit 1
