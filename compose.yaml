@@ -89,6 +89,8 @@ volumes:
   outer-dind:
   dind-data:
   gomodcache:
+    name: pi-agent_gomodcache
+    external: true # владелец — make seeds, не compose
   gocache:
   npm:
   xdg-config:
@@ -96,3 +98,5 @@ volumes:
   nvim-data:
   nvim-state:
   whisper:
+    name: pi-agent_whisper
+    external: true # владелец — make seeds, не compose
