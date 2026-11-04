@@ -48,8 +48,11 @@ sudo systemctl enable pi-sandbox-guard
 sudo systemctl restart pi-sandbox-guard
 systemctl is-active --quiet pi-sandbox-guard \
   || { echo "install: юнит pi-sandbox-guard не активен (journalctl -u pi-sandbox-guard)" >&2; exit 1; }
-sudo nft list table inet pi_sandbox_guard 2>/dev/null | grep -q prerouting_guard \
-  || { echo "install: nft-таблицы pi_sandbox_guard с prerouting_guard нет после старта юнита" >&2; exit 1; }
+guard_table="$(sudo nft list table inet pi_sandbox_guard 2>/dev/null || true)"
+grep -q prerouting_guard <<<"$guard_table" \
+  && grep -qF 'fib daddr type local' <<<"$guard_table" \
+  && grep -qF 'priority dstnat - 10' <<<"$guard_table" \
+  || { echo "install: в nft-таблице pi_sandbox_guard нет prerouting_guard / fib daddr type local / priority dstnat - 10" >&2; exit 1; }
 [ -f /run/pi-sandbox-guard.active ] \
   || { echo "install: нет штампа /run/pi-sandbox-guard.active" >&2; exit 1; }
 

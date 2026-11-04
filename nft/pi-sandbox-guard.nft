@@ -1,3 +1,5 @@
+destroy table inet pi_sandbox_guard
+
 table inet pi_sandbox_guard {
   chain prerouting_guard {
     type filter hook prerouting priority -110; policy accept;
