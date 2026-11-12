@@ -43,5 +43,6 @@ pi
 - Обновление скриптов/моста: git pull && ./install.sh (юнит перезапустится сам).
 - Креды агента (kubectl/psql): шаблоны в ~/credentials/agents-credentials/*.example -
   заполнить и сохранить рядом как kubeconfig / pgpass / pg_service.conf (chmod 600), затем
-  перезапустить pi. kubectl port-forward - через порты 127.0.0.1:8600-8699; psql - по
-  ~/.pgpass и pg_service.conf (psql service=...).
+  перезапустить pi. kubectl port-forward - только с --address 0.0.0.0: без него слушатель
+  только на loopback внутри netns dind и до опубликованных 127.0.0.1:8600-8699 не достаёт;
+  psql - по ~/.pgpass и pg_service.conf (psql service=...).
