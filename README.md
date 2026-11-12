@@ -47,3 +47,5 @@ pi
   внутри netns dind и до опубликованных 127.0.0.1:8600-8699 не достаёт; psql - по
   ~/.pgpass и pg_service.conf (psql 'service=primary dbname=mydb'; флаг -d перебивает
   позиционный service=).
+- Скилл окружения агента (kubectl/psql/docker) - skills/sandbox-environment, pi-run
+  доставляет его агенту.
