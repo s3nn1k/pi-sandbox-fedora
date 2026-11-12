@@ -26,4 +26,17 @@ if [ -s "$f" ]; then
     esac
   done < "$f"
 fi
+# Опциональный срез kube/psql: пустой/отсутствующий файл - тихий пропуск, не ошибка;
+# kubectl/psql читают дефолтные пути, env не нужен.
+for cred_name in kubeconfig pgpass pg_service.conf; do
+  cred_src="/run/secrets/pi-agent-creds/$cred_name"
+  [ -s "$cred_src" ] || continue
+  case "$cred_name" in
+    kubeconfig) mkdir -p "$HOME/.kube"; cred_dest="$HOME/.kube/config" ;;
+    pgpass) cred_dest="$HOME/.pgpass" ;;
+    pg_service.conf) cred_dest="$HOME/.pg_service.conf" ;;
+  esac
+  install -m 600 "$cred_src" "$cred_dest" \
+    || { echo "entrypoint: не смог установить $cred_name" >&2; exit 1; }
+done
 exec pi "$@"

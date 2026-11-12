@@ -41,3 +41,7 @@ pi
 - Живые сессии: docker ps --format '{{.Names}}' | grep pi-sess; при обрыве связи pi-run
   перецепляется сам; "сессия осиротела" (dind пересоздан) - перезапуск pi.
 - Обновление скриптов/моста: git pull && ./install.sh (юнит перезапустится сам).
+- Креды агента (kubectl/psql): шаблоны в ~/credentials/agents-credentials/*.example -
+  заполнить и сохранить рядом как kubeconfig / pgpass / pg_service.conf (chmod 600), затем
+  перезапустить pi. kubectl port-forward - через порты 127.0.0.1:8600-8699; psql - по
+  ~/.pgpass и pg_service.conf (psql service=...).
