@@ -200,16 +200,19 @@ done
 [ -d "$CACHE/git-credentials" ] && rm -rf "$CACHE/git-credentials"
 install -m 600 "$HOME/credentials/agents-credentials/git-credentials" "$CACHE/git-credentials" \
   || { echo "pi: нет $HOME/credentials/agents-credentials/git-credentials" >&2; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
-# Агентный срез kube/psql: в compose биндится каталог — его создаём всегда, чтобы docker не
-# создал его сам; опциональный кред пуст/исчез -> rm из кэша, устаревшая копия не едет агенту.
+# Агентный срез kube/psql: каталог создаём всегда — docker иначе создаст его сам на пути bind;
+# перезапись атомарна (tmp + mv), исчезнувший кред -> rm, неудалённый stale — громкий отказ.
 mkdir -p "$CACHE/agent-creds"
 for cred_name in kubeconfig pgpass pg_service.conf; do
   cred_src="$HOME/credentials/agents-credentials/$cred_name"
+  cred_dst="$CACHE/agent-creds/$cred_name"
   if [ -s "$cred_src" ]; then
-    install -m 600 "$cred_src" "$CACHE/agent-creds/$cred_name" \
-      || { echo "pi: сбой копирования $cred_src" >&2; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
+    install -m 600 "$cred_src" "$CACHE/agent-creds/.$cred_name.tmp" \
+      && mv -f "$CACHE/agent-creds/.$cred_name.tmp" "$cred_dst" \
+      || { rm -f "$CACHE/agent-creds/.$cred_name.tmp"; echo "pi: сбой копирования $cred_src" >&2; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
   else
-    rm -f "$CACHE/agent-creds/$cred_name"
+    rm -f "$cred_dst" 2>/dev/null \
+      || { echo "pi: не смог удалить устаревший $cred_dst" >&2; kill $rs_brain $rs_nvim $rs_dot 2>/dev/null; wait; sync_lock_release; exit 1; }
   fi
 done
 sync_fail=0
