@@ -45,4 +45,5 @@ pi
   ~/credentials/agents-credentials/ (рядом с git-credentials), затем перезапустить pi.
   kubectl port-forward - только с --address 0.0.0.0: без него слушатель только на loopback
   внутри netns dind и до опубликованных 127.0.0.1:8600-8699 не достаёт; psql - по
-  ~/.pgpass и pg_service.conf (psql service=...).
+  ~/.pgpass и pg_service.conf (psql 'service=primary dbname=mydb'; флаг -d перебивает
+  позиционный service=).
